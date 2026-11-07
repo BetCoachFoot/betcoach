@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BetCoach</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#f5f6f8;--card:#fff;--tx:#14181f;--mu:#6b7280;--ac:#e11d2e;--ok:#16a34a;--ko:#dc2626;--cash:#d97706;--bd:#e5e7eb;color-scheme:light}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#1a1d24;--tx:#f2f4f7;--mu:#9aa3b2;--bd:#2a2f3a;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding-bottom:76px}
+header{padding:16px;font-weight:700;font-size:20px;display:flex;justify-content:space-between;align-items:center}
+header a{font-size:13px;font-weight:400;color:var(--mu)}
+main{padding:0 14px;max-width:560px;margin:auto}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:12px}
+.row{display:flex;gap:8px}.row>*{flex:1}
+input{width:100%;padding:11px;border-radius:10px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);font-size:16px;margin-bottom:8px}
+button{border:0;border-radius:10px;padding:11px;font-weight:600;font-size:14px;background:var(--ac);color:#fff;cursor:pointer}
+button.g{background:var(--ok)}button.r{background:var(--ko)}button.c{background:var(--cash)}button.s{background:var(--bd);color:var(--tx)}
+.tag{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:700;color:#fff}
+.pending{background:var(--mu)}.won{background:var(--ok)}.lost{background:var(--ko)}.cashout{background:var(--cash)}
+.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.mu{color:var(--mu);font-size:13px}.big{font-size:30px;font-weight:800}.pos{color:var(--ok)}.neg{color:var(--ko)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center}.stats b{display:block;font-size:18px}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--card);border-top:1px solid var(--bd);padding-bottom:env(safe-area-inset-bottom,0px)}
+nav button{flex:1;background:none;color:var(--mu);border-radius:0;padding:14px 4px}nav button.on{color:var(--ac)}
+#toast{position:fixed;top:calc(env(safe-area-inset-top,0px) + 10px);left:12px;right:12px;background:var(--tx);color:var(--bg);padding:12px 14px;border-radius:12px;transform:translateY(-140%);transition:.3s;z-index:20}
+#toast.show{transform:none}
+.disc{font-size:12px;color:var(--mu);text-align:center;padding:8px 14px 20px}
+</style>
+</head>
+<body>
+<div id="toast"></div>
+<header><span>BetCoach</span><a href="#" id="out" hidden>Déconnexion</a></header>
+<main id="app"></main>
+<div class="disc">Jouer comporte des risques : endettement, isolement, dépendance. Interdit aux moins de 18 ans. Appel gratuit : 09 74 75 13 13. Ces paris ne sont pas des conseils garantis.</div>
+<nav id="nav" hidden></nav>
+<script type="module">
+import{initializeApp}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import{getAuth,onAuthStateChanged,signInWithEmailAndPassword,createUserWithEmailAndPassword,signOut}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import{getFirestore,collection,addDoc,onSnapshot,query,orderBy,updateDoc,deleteDoc,doc,setDoc,serverTimestamp}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+const cfg={apiKey:"AIzaSyBE4xiEJoTA0qBfANhQEOAWI0Kr4XxqEfo",authDomain:"betcoach-70368.firebaseapp.com",projectId:"betcoach-70368",storageBucket:"betcoach-70368.firebasestorage.app",messagingSenderId:"760156699872",appId:"1:760156699872:web:0f9c1a188e62c28a576485"};
+const OWNER="thom.dvn.michelin@gmail.com";
+const app=initializeApp(cfg),auth=getAuth(app),db=getFirestore(app);
+let user=null,bets=[],tab="feed",unsub=null;
+const LBL={pending:"En cours",won:"Gagné",lost:"Perdu",cashout:"Cash out"};
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const eur=n=>(n<0?"-":"")+Math.abs(n).toFixed(2).replace(".",",")+" €";
+const isOwner=()=>user&&user.email===OWNER;
+const profit=b=>b.status==="won"?b.stake*(b.odds-1):b.status==="lost"?-b.stake:b.status==="cashout"?b.cash-b.stake:0;
+function toast(m){const t=$("toast");t.textContent=m;t.className="show";setTimeout(()=>t.className="",3000)}
+function fail(e){const c=e.code||"";toast(c.includes("invalid-credential")||c.includes("wrong-password")?"E-mail ou mot de passe incorrect.":c.includes("email-already")?"Cet e-mail a déjà un compte.":c.includes("weak-password")?"Mot de passe trop court (6 caractères min.).":c.includes("permission")?"Action non autorisée.":"Erreur : "+(c||e.message))}
+window.login=async()=>{try{await signInWithEmailAndPassword(auth,$("e").value.trim(),$("p").value)}catch(e){fail(e)}};
+window.signup=async()=>{try{const r=await createUserWithEmailAndPassword(auth,$("e").value.trim(),$("p").value);await setDoc(doc(db,"subscribers",r.user.uid),{email:r.user.email,createdAt:serverTimestamp()})}catch(e){fail(e)}};
+$("out").onclick=e=>{e.preventDefault();signOut(auth)};
+window.addBet=async()=>{
+  const m=$("m").value.trim(),t=$("t").value.trim(),o=parseFloat($("o").value),s=parseFloat($("s").value);
+  if(!m||!(o>1)||!(s>0)){toast("Complète match, cote (>1) et mise.");return}
+  try{await addDoc(collection(db,"bets"),{match:m,type:t||"Pari simple",odds:o,stake:s,status:"pending",createdAt:serverTimestamp()});toast("Pari publié.");go("feed")}catch(e){fail(e)}};
+window.settle=async(id,st)=>{
+  const u={status:st};
+  if(st==="cashout"){const c=parseFloat(prompt("Montant du cash out (€) ?"));if(isNaN(c)||c<0)return;u.cash=c}
+  try{await updateDoc(doc(db,"bets",id),u)}catch(e){fail(e)}};
+window.del=async id=>{if(confirm("Supprimer ce pari ?"))try{await deleteDoc(doc(db,"bets",id))}catch(e){fail(e)}};
+function card(b){
+  const p=profit(b),d=b.createdAt&&b.createdAt.toDate?b.createdAt.toDate().toLocaleDateString("fr-FR"):"";
+  const adm=isOwner()?(b.status==="pending"?`<div class="row" style="margin-top:10px"><button class="g" onclick="settle('${b.id}','won')">Gagné</button><button class="r" onclick="settle('${b.id}','lost')">Perdu</button><button class="c" onclick="settle('${b.id}','cashout')">Cash out</button></div>`:"")+`<div style="text-align:right"><a class="mu" href="#" onclick="del('${b.id}');return false">supprimer</a></div>`:"";
+  return `<div class="card"><div class="top"><b>${esc(b.match)}</b><span class="tag ${b.status}">${LBL[b.status]}</span></div><div class="mu">${esc(b.type)} · cote ${b.odds} · mise ${eur(b.stake)} · ${d}</div>${b.status!=="pending"?`<div class="${p>=0?"pos":"neg"}" style="font-weight:700;margin-top:4px">${p>=0?"+":""}${eur(p)}</div>`:""}${adm}</div>`}
+function chart(){
+  const pts=[0];let c=0;bets.slice().reverse().forEach(b=>{if(b.status!=="pending"){c+=profit(b);pts.push(c)}});
+  if(pts.length<2)return'<div class="mu" style="padding:30px 0;text-align:center">La courbe apparaîtra après le premier pari clôturé.</div>';
+  const mn=Math.min(...pts),mx=Math.max(...pts),r=(mx-mn)||1,W=320,H=140;
+  const d=pts.map((v,i)=>(i/(pts.length-1)*W).toFixed(1)+","+(H-8-((v-mn)/r)*(H-16)).toFixed(1)).join(" ");
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Bénéfice cumulé"><polyline points="${d}" fill="none" stroke="var(--ac)" stroke-width="2.5" stroke-linejoin="round"/></svg>`}
+function render(){
+  const app=$("app"),nav=$("nav");
+  if(!user){nav.hidden=true;$("out").hidden=true;
+    app.innerHTML='<div class="card"><b>Connexion</b><p class="mu">Connecte-toi pour suivre les paris, ou crée un compte abonné (18 ans et plus).</p><input id="e" type="email" placeholder="E-mail" autocomplete="email"><input id="p" type="password" placeholder="Mot de passe" autocomplete="current-password"><div class="row"><button onclick="login()">Se connecter</button><button class="s" onclick="signup()">Créer un compte</button></div></div>';return}
+  nav.hidden=false;$("out").hidden=false;
+  const tabs=[["feed","Paris"]].concat(isOwner()?[["add","+ Pari"]]:[]).concat([["track","Bénéfice"]]);
+  nav.innerHTML=tabs.map(t=>`<button class="${t[0]===tab?"on":""}" onclick="go('${t[0]}')">${t[1]}</button>`).join("");
+  let h="";
+  if(tab==="feed")h=bets.length?bets.map(card).join(""):'<div class="card mu">Aucun pari pour l’instant.</div>';
+  if(tab==="add")h='<div class="card"><b>Nouveau pari</b><p class="mu">Saisis ton ticket Betclic.</p><input id="m" placeholder="Match (ex. PSG – OM)"><input id="t" placeholder="Pari (ex. Victoire PSG)"><div class="row"><input id="o" type="number" step="0.01" inputmode="decimal" placeholder="Cote"><input id="s" type="number" step="0.5" inputmode="decimal" placeholder="Mise €"></div><button style="width:100%" onclick="addBet()">Publier le pari</button></div>';
+  if(tab==="track"){const done=bets.filter(b=>b.status!=="pending"),pr=done.reduce((a,b)=>a+profit(b),0),st=done.reduce((a,b)=>a+b.stake,0),w=done.filter(b=>profit(b)>0).length,pend=bets.filter(b=>b.status==="pending").reduce((a,b)=>a+b.stake,0);
+    h=`<div class="card"><div class="mu">Bénéfice cumulé</div><div class="big ${pr>=0?"pos":"neg"}">${pr>=0?"+":""}${eur(pr)}</div>${chart()}</div><div class="card stats"><div><b>${st?(pr/st*100).toFixed(1):"0"} %</b><span class="mu">ROI</span></div><div><b>${done.length?Math.round(w/done.length*100):0} %</b><span class="mu">Réussite</span></div><div><b>${eur(pend)}</b><span class="mu">En jeu</span></div></div>`}
+  app.innerHTML=h}
+window.go=t=>{tab=t;render();scrollTo(0,0)};
+onAuthStateChanged(auth,u=>{user=u;if(unsub){unsub();unsub=null}bets=[];tab="feed";
+  if(u)unsub=onSnapshot(query(collection(db,"bets"),orderBy("createdAt","desc")),s=>{bets=s.docs.map(d=>({id:d.id,...d.data()}));render()},fail);
+  render()});
+render();
+</script>
+</body>
+</html>
