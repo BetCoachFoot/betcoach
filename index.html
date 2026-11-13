@@ -46,11 +46,27 @@ nav button{flex:1;background:none;color:var(--mu);border-radius:0;padding:14px 4
 <script type="module">
 import{initializeApp}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import{getAuth,onAuthStateChanged,signInWithEmailAndPassword,createUserWithEmailAndPassword,signOut}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import{getFirestore,collection,addDoc,onSnapshot,query,orderBy,updateDoc,deleteDoc,doc,setDoc,serverTimestamp,where,Timestamp}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import{getFirestore,collection,addDoc,onSnapshot,query,orderBy,updateDoc,deleteDoc,doc,setDoc,serverTimestamp,where,Timestamp,arrayUnion}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import{getMessaging,getToken,onMessage,isSupported}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
 const cfg={apiKey:"AIzaSyBE4xiEJoTA0qBfANhQEOAWI0Kr4XxqEfo",authDomain:"betcoach-70368.firebaseapp.com",projectId:"betcoach-70368",storageBucket:"betcoach-70368.firebasestorage.app",messagingSenderId:"760156699872",appId:"1:760156699872:web:0f9c1a188e62c28a576485"};
 const OWNER="thom.dvn.michelin@gmail.com";
+const VAPID="BKsZrhrweLmLALUQO96u_Idy8cUh6mbzV02dx6-A2hRor6SdXZUMSqL9Adsi8_58lBvAcwGg-Y7YHYNWTpnhGec";
 const SHOW_LATE=false; // mettre true avant d’ouvrir l’app aux abonnés
 const app=initializeApp(cfg),auth=getAuth(app),db=getFirestore(app);
+isSupported().then(ok=>{if(ok)onMessage(getMessaging(app),p=>toast("🔔 "+((p.data&&p.data.title)||"Nouveau pari")))}).catch(()=>{});
+window.enablePush=async()=>{
+  try{
+    if(!user){toast("Connecte-toi d’abord.");return}
+    if(!("Notification"in window)||!(await isSupported())){toast("Notifications non disponibles sur cet appareil.");return}
+    if(isIOS()&&!standalone()){toast("Installe d’abord l’app sur l’écran d’accueil, puis rouvre-la.");return}
+    const perm=await Notification.requestPermission();
+    if(perm!=="granted"){toast("Notifications refusées : active-les dans les réglages de l’appareil.");render();return}
+    const reg=await navigator.serviceWorker.ready;
+    const token=await getToken(getMessaging(app),{vapidKey:VAPID,serviceWorkerRegistration:reg});
+    if(!token)throw new Error("jeton vide");
+    await setDoc(doc(db,"subscribers",user.uid),{email:user.email,fcmTokens:arrayUnion(token)},{merge:true});
+    toast("Notifications activées.");render()
+  }catch(e){toast("Échec de l’activation : "+(e.message||e.code||e))}};
 let user=null,bets=[],pub=[],subs=[],tab="feed",unsub=null,unsub2=null;
 const REF=(new URLSearchParams(location.search).get("ref")||"").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,12);
 const LBL={pending:"En cours",won:"Gagné",lost:"Perdu",cashout:"Cash out"};
@@ -64,6 +80,10 @@ const standalone=()=>matchMedia("(display-mode: standalone)").matches||navigator
 const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent);
 window.installApp=async()=>{if(dip){dip.prompt();try{await dip.userChoice}catch(e){}dip=null;render()}};
 window.hideInstall=()=>{try{localStorage.setItem("noinst","1")}catch(e){}hid=true;render()};
+function pushCard(){
+  if(!user||!("Notification"in window)||Notification.permission!=="default")return"";
+  if(isIOS()&&!standalone())return"";
+  return'<div class="card"><b>Être alerté des nouveaux paris</b><div class="mu">Reçois une notification dès qu’un pari est publié.</div><button style="width:100%;margin-top:10px" onclick="enablePush()">Activer les notifications</button></div>'}
 function installCard(){
   if(standalone()||hid)return"";
   if(dip)return'<div class="card"><b>Installer BetCoach</b><div class="mu">Ajoute l’app à ton écran d’accueil pour la retrouver en un geste.</div><div class="row" style="margin-top:10px"><button onclick="installApp()">Installer</button><button class="s" onclick="hideInstall()">Plus tard</button></div></div>';
@@ -122,12 +142,14 @@ function render(){
   const tabs=[["feed","Paris"]].concat(isOwner()?[["add","+ Pari"]]:[]).concat([["track","Bénéfice"],["me","Parrainage"]]);
   nav.innerHTML=tabs.map(t=>`<button class="${t[0]===tab?"on":""}" onclick="go('${t[0]}')">${t[1]}</button>`).join("");
   let h="";
-  if(tab==="feed")h=installCard()+(bets.length?bets.map(card).join(""):'<div class="card mu">Aucun pari pour l’instant.</div>');
+  if(tab==="feed")h=installCard()+pushCard()+(bets.length?bets.map(card).join(""):'<div class="card mu">Aucun pari pour l’instant.</div>');
   if(tab==="add")h='<div class="card"><b>Nouveau pari</b><p class="mu">Date et heure : celles de ton ticket Betclic.'+(SHOW_LATE?' Un pari ajouté après coup est signalé comme tel aux abonnés.':'')+'</p><input id="m" placeholder="Match (ex. PSG – OM)"><input id="t" placeholder="Pari (ex. Victoire PSG)"><div class="row"><input id="o" type="number" step="0.01" inputmode="decimal" placeholder="Cote"><input id="s" type="number" step="0.5" inputmode="decimal" placeholder="Mise €"></div><div class="mu">Date et heure du pari</div><input id="d" type="datetime-local" value="'+nowLocal()+'"><div class="mu">Résultat</div><select id="st"><option value="pending">En cours</option><option value="won">Gagné</option><option value="lost">Perdu</option><option value="cashout">Cash out</option></select><input id="ca" type="number" step="0.01" inputmode="decimal" placeholder="Montant du cash out € (si cash out)"><button style="width:100%" onclick="addBet()">Enregistrer le pari</button></div>';
   if(tab==="track"){const done=bets.filter(b=>b.status!=="pending"),pr=done.reduce((a,b)=>a+profit(b),0),st=done.reduce((a,b)=>a+b.stake,0),w=done.filter(b=>profit(b)>0).length,pend=bets.filter(b=>b.status==="pending").reduce((a,b)=>a+b.stake,0);
     h=`<div class="card"><div class="mu">Bénéfice cumulé</div><div class="big ${pr>=0?"pos":"neg"}">${pr>=0?"+":""}${eur(pr)}</div>${chart(bets)}</div><div class="card stats"><div><b>${st?(pr/st*100).toFixed(1):"0"} %</b><span class="mu">ROI</span></div><div><b>${done.length?Math.round(w/done.length*100):0} %</b><span class="mu">Réussite</span></div><div><b>${eur(pend)}</b><span class="mu">En jeu</span></div></div>`}
   if(tab==="me"){const c=user.uid.slice(0,6).toUpperCase(),link=location.origin+location.pathname+"?ref="+c;
     h=`<div class="card"><b>Mon code parrain</b><div class="big">${c}</div><div class="mu" style="word-break:break-all">${esc(link)}</div><button style="width:100%;margin-top:10px" onclick="share('${link}')">Partager mon lien</button></div>`+(isOwner()?`<div class="card"><b>Comptes abonnés</b><div class="big">${subs.length}</div><div class="mu">dont ${subs.filter(x=>x.referredBy).length} avec un code parrain</div></div>`:"")}
+  if(tab==="me"){const pn=("Notification"in window)?Notification.permission:"x";
+    h+=`<div class="card"><b>Notifications</b><div class="mu">${pn==="granted"?"✓ Autorisées sur cet appareil.":pn==="denied"?"Bloquées : réactive-les dans les réglages de l’appareil.":pn==="x"?"Non disponibles ici.":"Non activées."}</div><button class="s" style="width:100%;margin-top:10px" onclick="enablePush()">${pn==="granted"?"Actualiser":"Activer les notifications"}</button></div>`}
   app.innerHTML=h}
 window.go=t=>{tab=t;render();scrollTo(0,0)};
 onAuthStateChanged(auth,u=>{user=u;[unsub,unsub2].forEach(f=>f&&f());unsub=unsub2=null;bets=[];subs=[];tab="feed";
