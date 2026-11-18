@@ -132,6 +132,10 @@ let sp=1,sc=false;
 window.pickPlan=i=>{sp=i;render()};
 window.tickSub=el=>{sc=el.checked;render()};
 window.paySub=()=>{const p=PLANS[sp];if(!sc||!p||!p.url||!CGV_URL)return;window.open(p.url,"_blank","noopener")};
+const WHOP_MANAGE="https://whop.com/@me/settings/orders/";
+function manageCard(){
+  const v=me&&me.whopPlan,p=v?PLANS.find(x=>x.url&&x.url.endsWith(v)):null,e=me&&me.whopPeriodEnd?new Date(me.whopPeriodEnd):null,end=e&&!isNaN(e)?e.toLocaleDateString("fr-FR"):"";
+  return'<div class="card"><b>Mon abonnement</b><div class="mu" style="margin:4px 0 10px">'+(p?"Formule "+({Semaine:"hebdomadaire",Mois:"mensuelle",Année:"annuelle"}[p.n]||p.n.toLowerCase())+" · "+p.p+" "+p.per:"Abonnement actif")+(end?" · période en cours jusqu’au "+end:"")+'</div><button style="width:100%" onclick="window.open(\''+WHOP_MANAGE+'\',\'_blank\',\'noopener\')">Gérer ou résilier</button><div class="mu" style="margin-top:8px">Connecte-toi à Whop avec l’adresse e-mail de ton paiement, ouvre ton abonnement, puis choisis d’annuler. La résiliation arrête le renouvellement : ton accès reste ouvert jusqu’à la fin de la période payée.</div></div>'}
 function accessCard(){
   const p=PLANS[sp],ready=!!(p&&p.url&&CGV_URL),can=ready&&sc;
   const plans=PLANS.map((x,i)=>'<button type="button" class="plan'+(i===sp?" on":"")+'" onclick="pickPlan('+i+')"><span class="pn">'+x.n+'</span><span class="pp">'+x.p+'</span><span class="pe">'+x.per+'</span>'+(x.best?'<span class="pb">'+x.best+'</span>':'')+'</button>').join("");
@@ -253,6 +257,7 @@ function render(){
   if(tab==="me"){const c=user.uid.slice(0,6).toUpperCase(),link=location.origin+location.pathname+"?ref="+c;
     h=`<div class="card"><b>Mon code parrain</b><div class="big">${c}</div><div class="mu" style="word-break:break-all">${esc(link)}</div><button style="width:100%;margin-top:10px" onclick="share('${link}')">Partager mon lien</button></div>`}
   if(tab==="me"&&!hasAccess())h=accessCard()+h;
+  if(tab==="me"&&!isOwner()&&me&&me.whopMembershipId)h=manageCard()+h;
   if(tab==="me"&&hasAccess()){const pn=("Notification"in window)?Notification.permission:"x";
     h+=`<div class="card"><b>Notifications</b><div class="mu">${pn==="granted"?"✓ Autorisées sur cet appareil.":pn==="denied"?"Bloquées : réactive-les dans les réglages de l’appareil.":pn==="x"?"Non disponibles ici.":"Non activées."}</div><button class="s" style="width:100%;margin-top:10px" onclick="enablePush()">${pn==="granted"?"Actualiser":"Activer les notifications"}</button></div>`}
   if(tab==="acc"&&isOwner()){
