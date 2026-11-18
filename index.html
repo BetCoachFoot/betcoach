@@ -23,6 +23,7 @@ header a{font-size:13px;color:var(--mu);text-decoration:none;padding:8px 2px}
 main{padding:0 14px;max-width:560px;margin:auto}
 h1,h2{font-family:var(--serif);font-weight:600;margin:0}
 h2{font-size:20px;line-height:1.2;margin-bottom:8px}
+.plans{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.plan{display:flex;flex-direction:column;align-items:center;gap:2px;padding:12px 4px 10px;background:var(--soft);color:var(--tx);border:1px solid var(--bd);position:relative;min-height:92px}.plan.on{border-color:var(--ac);box-shadow:0 0 0 1px var(--ac) inset}.plan .pn{font-size:12px;color:var(--mu);font-weight:600}.plan .pp{font:600 24px/1.1 var(--serif);font-variant-numeric:lining-nums}.plan .pe{font-size:11px;color:var(--mu);font-weight:500}.plan .pb{font-size:10px;color:var(--gold2);font-weight:600;margin-top:3px}button:disabled{opacity:.45;cursor:default}
 .card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:15px 16px;margin-bottom:12px}
 .row{display:flex;gap:8px}.row>*{flex:1}
 input,select{width:100%;padding:12px;border-radius:10px;border:1px solid var(--bd);background:#0E0E10;color:var(--tx);font:16px system-ui,sans-serif;margin-bottom:8px}
@@ -124,7 +125,22 @@ function pushCard(){
   if(!user||!("Notification"in window)||Notification.permission!=="default")return"";
   if(isIOS()&&!standalone())return"";
   return'<div class="card"><b>Être alerté des nouveaux paris</b><div class="mu">Reçois une notification dès qu’un pari est publié.</div><button style="width:100%;margin-top:10px" onclick="enablePush()">Activer les notifications</button></div>'}
-function accessCard(){return'<div class="card"><b>Accès réservé aux abonnés</b><div class="mu">Ton compte n’est pas encore activé. Les paris en cours et les notifications sont réservés aux abonnés : contacte LiveMomentum pour activer ton accès.</div></div>'}
+/* Abonnement : colle ici les liens de paiement Whop (un par formule) et le lien des CGV quand ils existent. Tant qu'ils sont vides, le bouton de paiement reste désactivé. */
+const CGV_URL="cgv.html";
+const PLANS=[{n:"Semaine",p:"7 €",per:"par semaine",url:"https://whop.com/checkout/plan_ogn1Gf5240dAW"},{n:"Mois",p:"19 €",per:"par mois",url:"https://whop.com/checkout/plan_vNO2MIeaC0mpl",best:"Le plus choisi"},{n:"Année",p:"190 €",per:"par an",url:"https://whop.com/checkout/plan_yOZxzRssXI04T",best:"2 mois offerts"}];
+let sp=1,sc=false;
+window.pickPlan=i=>{sp=i;render()};
+window.tickSub=el=>{sc=el.checked;render()};
+window.paySub=()=>{const p=PLANS[sp];if(!sc||!p||!p.url||!CGV_URL)return;window.open(p.url,"_blank","noopener")};
+function accessCard(){
+  const p=PLANS[sp],ready=!!(p&&p.url&&CGV_URL),can=ready&&sc;
+  const plans=PLANS.map((x,i)=>'<button type="button" class="plan'+(i===sp?" on":"")+'" onclick="pickPlan('+i+')"><span class="pn">'+x.n+'</span><span class="pp">'+x.p+'</span><span class="pe">'+x.per+'</span>'+(x.best?'<span class="pb">'+x.best+'</span>':'')+'</button>').join("");
+  return'<div class="card"><b>Devenir abonné</b><div class="mu" style="margin:4px 0 10px">Reçois chaque pari en direct, avec sa cote, sa mise et une notification, puis son résultat. Sans engagement : tu résilies en ligne quand tu veux.</div><div class="plans">'+plans+'</div>'
+  +'<div class="mu" style="margin-top:12px">Paie avec la même adresse e-mail que ton compte : <b>'+esc(user?user.email:"")+'</b>. Ton accès est ouvert dès la confirmation du paiement.</div>'
+  +'<label class="chk" style="margin-top:12px;font-size:13px"><input type="checkbox"'+(sc?" checked":"")+' onchange="tickSub(this)"><span style="font-size:13px;line-height:1.45">Je demande l’accès immédiat et je sais que si je me rétracte dans les 14 jours, je paierai la part du service déjà fournie. J’ai lu et j’accepte les '+(CGV_URL?'<a href="'+CGV_URL+'" target="_blank" rel="noopener" style="color:var(--gold2)">conditions générales de vente</a>':'conditions générales de vente')+'. J’ai 18 ans ou plus.</span></label>'
+  +'<button style="width:100%;margin-top:12px"'+(can?"":" disabled")+' onclick="paySub()">'+(ready?"S’abonner · "+p.p+" "+p.per:"Paiement bientôt disponible")+'</button>'
+  +(ready?"":'<div class="mu" style="margin-top:8px">En attendant, contacte LiveMomentum pour activer ton accès.</div>')
+  +'<div class="mu" style="margin-top:12px;font-size:12px">Jouer comporte des risques : endettement, isolement, dépendance. Appelle le 09 74 75 13 13 (appel non surtaxé). Aucun gain n’est garanti ; le service ne prend aucun pari.</div></div>'}
 function installCard(){
   if(standalone()||hid)return"";
   if(dip)return'<div class="card"><b>Installer LiveMomentum</b><div class="mu">Ajoute l’app à ton écran d’accueil pour la retrouver en un geste.</div><div class="row" style="margin-top:10px"><button onclick="installApp()">Installer</button><button class="s" onclick="hideInstall()">Plus tard</button></div></div>';
@@ -236,6 +252,7 @@ function render(){
     h=`<div class="card"><div class="mu">Bénéfice cumulé</div><div class="big ${pr>=0?"pos":"neg"}">${pr>=0?"+":""}${eur(pr)}</div>${chart(bets)}<div class="mu" style="margin:10px 0 6px">Forme récente</div>${formStrip(bets)}</div><div class="card stats"><div><b>${st?(pr/st*100).toFixed(1):"0"} %</b><span class="mu">ROI</span></div><div><b>${done.length?Math.round(w/done.length*100):0} %</b><span class="mu">Réussite</span></div><div><b>${eur(pend)}</b><span class="mu">En jeu</span></div></div>`}
   if(tab==="me"){const c=user.uid.slice(0,6).toUpperCase(),link=location.origin+location.pathname+"?ref="+c;
     h=`<div class="card"><b>Mon code parrain</b><div class="big">${c}</div><div class="mu" style="word-break:break-all">${esc(link)}</div><button style="width:100%;margin-top:10px" onclick="share('${link}')">Partager mon lien</button></div>`}
+  if(tab==="me"&&!hasAccess())h=accessCard()+h;
   if(tab==="me"&&hasAccess()){const pn=("Notification"in window)?Notification.permission:"x";
     h+=`<div class="card"><b>Notifications</b><div class="mu">${pn==="granted"?"✓ Autorisées sur cet appareil.":pn==="denied"?"Bloquées : réactive-les dans les réglages de l’appareil.":pn==="x"?"Non disponibles ici.":"Non activées."}</div><button class="s" style="width:100%;margin-top:10px" onclick="enablePush()">${pn==="granted"?"Actualiser":"Activer les notifications"}</button></div>`}
   if(tab==="acc"&&isOwner()){
